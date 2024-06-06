@@ -17,7 +17,7 @@ jobs:
       image: rockylinux:8
     steps:
       - name: Install Deps
-        run: yum install -y python3 cmake make openscap-utils python3-pyyaml libxslt xml-common python3-jinja2 python3-setuptools
+        run: yum install -y cmake make openscap-utils python3-pyyaml libxslt xml-common python3-jinja2 python3-setuptools
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build
