@@ -1,4 +1,4 @@
-name: Automatus SLE15
+name: Automatus UBT22
 on:
   pull_request:
     branches: [ master, 'stabilization*' ]
@@ -6,26 +6,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.run_id }}
   cancel-in-progress: true
 env:
-  DATASTREAM: ssg-sle15-ds.xml
+  DATASTREAM: ssg-ubuntu2204-ds.xml
 jobs:
   build-content:
     name: Build Content
     runs-on: ubuntu-latest
     container:
-      image: registry.suse.com/bci/bci-base:latest
+      image: fedora:latest
     steps:
-      - name: Update CA certificates
-        run: update-ca-certificates
-      - name: Zypper refs  
-        run: zypper refs
-      - name: Zypper refresh  
-        run: zypper refresh 
-      - name: Install deps
-        run: zypper --non-interactive in cmake ninja expat openssh-clients openssh-server openscap-utils tar gzip git python3 python3-rpm python3-pip python3-devel libxml2-tools libxslt-tools python3-PyYAML
-      - name: Upgrade pip python
-        run: pip install pip --upgrade
+      - name: Install Deps
+        run: dnf install -y cmake make openscap-utils python3-pyyaml python3-jinja2 git python3-deepdiff python3-requests jq python3-pip
       - name: Install deps python
-        run: pip install json2html sphinxcontrib.jinjadomain GitPython deepdiff Jinja2 xmldiff
+        run: pip install gitpython xmldiff
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -41,7 +33,7 @@ jobs:
       - name: Find forking point
         env:
           BASE_BRANCH: ${{ github.base_ref }}
-        run: echo "FORK_POINT=$(git merge-base --fork-point origin/$BASE_BRANCH ${{ github.event.pull_request.head.sha }})" >> $GITHUB_OUTPUT
+        run: echo "FORK_POINT=$(git merge-base origin/$BASE_BRANCH ${{ github.event.pull_request.head.sha }})" >> $GITHUB_OUTPUT
         id: fork_point
       - name: Detect content changes in the PR
         run: python3 ./ctf/content_test_filtering.py pr --base ${{ steps.fork_point.outputs.FORK_POINT }} --remote_repo ${{ github.server_url }}/${{ github.repository }}  --verbose --rule --output json ${{ github.event.pull_request.number }} > output.json
@@ -65,7 +57,7 @@ jobs:
           prop_path: 'product'
       - name: Build product
         if: ${{ steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
-        run: ./build_product sle15
+        run: ./build_product ubuntu2204 --derivatives
       - uses: actions/upload-artifact@v4
         if: ${{ steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
         with:
@@ -74,10 +66,10 @@ jobs:
   validate-ubuntu:
     name: Run Tests
     needs: build-content
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Install Deps
-        run: sudo apt-get update && sudo apt-get install cmake ninja-build libopenscap8 libxml2-utils xsltproc python3-jinja2 python3-yaml ansible-lint podman
+        run: sudo apt update && sudo apt install -y cmake ninja-build libopenscap8 libxml2-utils xsltproc python3-jinja2 python3-yaml ansible-lint podman
       - name: Checkout
         uses: actions/checkout@v4
       - name: Get cached CTF output
@@ -100,7 +92,7 @@ jobs:
         run: ssh-keygen -N '' -t rsa -f ~/.ssh/id_rsa
       - name: Build test suite container
         if: ${{ steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
-        run: podman build --build-arg "CLIENT_PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)" -t ssg_test_suite -f test_suite-sle15
+        run: podman build --build-arg "CLIENT_PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)" -t ssg_test_suite -f test_suite-ubt22
         working-directory: ./Dockerfiles
       - name: Get oscap-ssh
         if: ${{ steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
@@ -146,7 +138,7 @@ jobs:
         if: ${{steps.bash.outputs.prop == 'True' && steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
         run: tests/test_rule_in_container.sh --no-remove-machine-only --dontclean --logdir logs_bash --remediate-using bash --name ssg_test_suite --datastream $DATASTREAM ${{join(fromJSON(steps.rules.outputs.prop))}}
         env:
-          ADDITIONAL_TEST_OPTIONS: "--duplicate-templates --remove-fips-certified --product sle15"
+          ADDITIONAL_TEST_OPTIONS: "--duplicate-templates --remove-fips-certified --product rhel8"
       - name: Check for ERROR in logs
         if: ${{steps.bash.outputs.prop == 'True' && steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
         run: grep -q "^ERROR" logs_bash/test_suite.log
@@ -167,7 +159,7 @@ jobs:
         if: ${{ steps.ansible.outputs.prop == 'True' && steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
         run: tests/test_rule_in_container.sh --no-remove-machine-only --dontclean --logdir logs_ansible --remediate-using ansible --name ssg_test_suite --datastream $DATASTREAM ${{join(fromJSON(steps.rules.outputs.prop))}}
         env:
-          ADDITIONAL_TEST_OPTIONS: "--duplicate-templates --remove-fips-certified --product sle15"
+          ADDITIONAL_TEST_OPTIONS: "--duplicate-templates --remove-fips-certified --product ubuntu2204"
       - name: Check for ERROR in logs
         if: ${{steps.ansible.outputs.prop == 'True' && steps.ctf.outputs.CTF_OUTPUT_SIZE != '0' }}
         run: grep -q "^ERROR" logs_ansible/test_suite.log
